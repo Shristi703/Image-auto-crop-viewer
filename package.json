@@ -1,0 +1,13 @@
+{
+  "name": "image-auto-crop-aspect-ratio-viewer",
+  "version": "1.0.0",
+  "description": "Full-stack MERN Image Auto Crop & Aspect Ratio Viewer with MongoDB Atlas GridFS storage",
+  "private": true,
+  "scripts": {
+    "start": "cd backend && npm start",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "build": "cd frontend && npm run build",
+    "seed": "cd backend && npm run seed"
+  }
+}
