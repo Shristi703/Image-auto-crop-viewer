@@ -1,7 +1,7 @@
 import React from 'react';
 import { Info, Check, Sparkles, Layers, Crop } from 'lucide-react';
 import { formatBytes } from '../utils/formatters';
-import { RATIO_OPTIONS } from './CropViewer';
+import { RATIO_OPTIONS } from '../utils/constants';
 
 export const ImageDetails = ({ image, croppedResult, selectedRatio }) => {
   if (!image) {

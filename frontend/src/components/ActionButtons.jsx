@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Database, Download, RefreshCw, CheckCircle, Loader2 } from 'lucide-react';
 import { downloadBlob } from '../utils/canvasCrop';
 import { uploadImageToDatabase } from '../utils/api';
-import { RATIO_OPTIONS } from './CropViewer';
+import { RATIO_OPTIONS } from '../utils/constants';
 
 export const ActionButtons = ({
   image,

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Header } from './components/Header';
 import { ImageUploader } from './components/ImageUploader';
-import { CropViewer, RATIO_OPTIONS } from './components/CropViewer';
+import { CropViewer } from './components/CropViewer';
+import { RATIO_OPTIONS } from './utils/constants';
 import { ImageDetails } from './components/ImageDetails';
 import { ActionButtons } from './components/ActionButtons';
 import { SavedGallery } from './components/SavedGallery';
