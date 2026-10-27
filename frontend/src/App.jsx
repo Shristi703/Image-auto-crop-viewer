@@ -19,6 +19,7 @@ export function App() {
   const [currentImage, setCurrentImage] = useState(null);
   // Default target aspect ratio is 1:1 Square
   const [selectedRatio, setSelectedRatio] = useState('1:1');
+  const [focusMode, setFocusMode] = useState('ai'); // 'ai', 'center', or 'top'
   const [croppedResult, setCroppedResult] = useState(null);
   const [isCropping, setIsCropping] = useState(false);
 
@@ -42,7 +43,7 @@ export function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  // AUTOMATIC REAL CANVAS CROP: Runs whenever currentImage or selectedRatio changes
+  // AUTOMATIC REAL CANVAS CROP: Runs whenever currentImage, selectedRatio, or focusMode changes
   useEffect(() => {
     if (!currentImage?.previewUrl) {
       if (currentCroppedUrlRef.current) {
@@ -62,6 +63,7 @@ export function App() {
     generateCroppedCanvasImage({
       source: currentImage.previewUrl,
       targetRatio: activeRatioObj.ratio,
+      focusMode,
       maxDimension: 2048,
       mimeType: currentImage.type || 'image/jpeg',
     })
@@ -95,7 +97,7 @@ export function App() {
     return () => {
       isMounted = false;
     };
-  }, [currentImage?.previewUrl, selectedRatio]);
+  }, [currentImage?.previewUrl, selectedRatio, focusMode]);
 
   // Load stored images from MongoDB GridFS
   const loadGallery = async (quiet = false) => {
@@ -239,6 +241,8 @@ export function App() {
               croppedResult={croppedResult}
               selectedRatio={selectedRatio}
               onRatioChange={setSelectedRatio}
+              focusMode={focusMode}
+              onFocusModeChange={setFocusMode}
               isCropping={isCropping}
             />
           </div>

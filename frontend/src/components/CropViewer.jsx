@@ -1,14 +1,19 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Square,
   RectangleHorizontal,
   Grid,
   CheckCircle2,
   Sparkles,
-  Maximize2,
-  Sliders,
-  Crop,
+  Scissors,
+  SplitSquareVertical,
+  Columns,
   Layers,
+  Crop,
+  Eye,
+  Sliders,
+  Target,
+  Bot,
 } from 'lucide-react';
 import { RATIO_OPTIONS } from '../utils/constants';
 
@@ -17,8 +22,13 @@ export const CropViewer = ({
   croppedResult,
   selectedRatio,
   onRatioChange,
+  focusMode = 'ai',
+  onFocusModeChange,
   isCropping = false,
 }) => {
+  const [viewMode, setViewMode] = useState('side-by-side'); // 'side-by-side' or 'slider'
+  const [sliderPos, setSliderPos] = useState(50); // 0 to 100 for before/after slider
+
   const activeOption =
     RATIO_OPTIONS.find((r) => r.id === selectedRatio) || RATIO_OPTIONS[0];
 
@@ -27,10 +37,10 @@ export const CropViewer = ({
       {/* Target Aspect Ratio Selection Bar */}
       <div className="crop-controls-card">
         <div className="controls-section-title">
-          <span>Target Aspect Ratio</span>
+          <span>1. Select Target Aspect Ratio</span>
           <span className="auto-badge">
             <Sparkles size={13} />
-            <span>Auto-Crops Instantly</span>
+            <span>AI Auto-Crops Instantly</span>
           </span>
         </div>
 
@@ -60,92 +70,254 @@ export const CropViewer = ({
             );
           })}
         </div>
-      </div>
 
-      {/* DUAL SIDE-BY-SIDE PREVIEWS: Original Image vs Auto Cropped Image */}
-      {image ? (
-        <div className="dual-preview-grid">
-          {/* 1. ORIGINAL IMAGE PREVIEW */}
-          <div className="preview-column">
-            <div className="preview-label-header">
-              <span className="preview-label-title">
-                <Layers size={15} />
-                <span>Original Image</span>
-              </span>
-              <span className="preview-label-meta">
-                {image.width} × {image.height} px ({image.aspectRatioText || image.aspectRatio})
-              </span>
-            </div>
+        {/* View Mode & AI Focus Mode Bar */}
+        <div className="view-mode-bar">
+          <div className="control-subgroup">
+            <span className="control-group-title">Crop Intelligence:</span>
+            <div className="toggle-group">
+              <button
+                type="button"
+                className={`toggle-btn ${focusMode === 'ai' ? 'active' : ''}`}
+                onClick={() => onFocusModeChange('ai')}
+                title="AI analyzes contrast & edges to find the subject"
+              >
+                <Bot size={13} />
+                <span>AI Subject Focus</span>
+              </button>
 
-            <div className="preview-box original-box">
-              <img
-                src={image.previewUrl}
-                alt="Original"
-                className="preview-img-contain"
-              />
+              <button
+                type="button"
+                className={`toggle-btn ${focusMode === 'center' ? 'active' : ''}`}
+                onClick={() => onFocusModeChange('center')}
+                title="Mathematical center crop"
+              >
+                <Target size={13} />
+                <span>Center Focus</span>
+              </button>
 
-              {/* Crop guide overlay box showing the center-crop slice */}
-              {croppedResult && (
-                <div
-                  className="crop-slice-indicator"
-                  style={{
-                    aspectRatio: activeOption.cssRatio,
-                  }}
-                  title="Center crop slice region"
-                >
-                  <div className="crop-indicator-badge">Crop Region ({activeOption.label})</div>
-                </div>
-              )}
-            </div>
-
-            <div className="preview-footer-note">
-              <span>Unmodified original image ({image.type ? image.type.replace('image/', '').toUpperCase() : 'IMAGE'})</span>
+              <button
+                type="button"
+                className={`toggle-btn ${focusMode === 'top' ? 'active' : ''}`}
+                onClick={() => onFocusModeChange('top')}
+                title="Focus on upper region (Faces / Portraits)"
+              >
+                <Eye size={13} />
+                <span>Portrait / Face</span>
+              </button>
             </div>
           </div>
 
-          {/* 2. AUTO-CROPPED IMAGE PREVIEW */}
-          <div className="preview-column">
-            <div className="preview-label-header cropped-header">
-              <span className="preview-label-title">
-                <Crop size={15} color="var(--primary)" />
-                <span style={{ color: 'var(--primary)' }}>Auto Cropped Image</span>
-              </span>
-              <span className="preview-label-meta highlight">
-                {croppedResult ? `${croppedResult.width} × ${croppedResult.height} px (${activeOption.label})` : 'Generating...'}
-              </span>
+          <div className="control-subgroup">
+            <span className="control-group-title">Comparison View:</span>
+            <div className="toggle-group">
+              <button
+                type="button"
+                className={`toggle-btn ${viewMode === 'side-by-side' ? 'active' : ''}`}
+                onClick={() => setViewMode('side-by-side')}
+                title="Side by side view of original with cut overlay vs cropped result"
+              >
+                <Columns size={13} />
+                <span>Side by Side</span>
+              </button>
+
+              <button
+                type="button"
+                className={`toggle-btn ${viewMode === 'slider' ? 'active' : ''}`}
+                onClick={() => setViewMode('slider')}
+                title="Interactive Before / After comparison slider"
+              >
+                <SplitSquareVertical size={13} />
+                <span>Swipe Slider</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* CROP COMPARISON ARENA */}
+      {image ? (
+        viewMode === 'side-by-side' ? (
+          /* 1. SIDE-BY-SIDE DUAL PREVIEW */
+          <div className="dual-preview-grid">
+            {/* ORIGINAL PREVIEW WITH VISUAL CUTOUT OVERLAY */}
+            <div className="preview-column">
+              <div className="preview-label-header">
+                <span className="preview-label-title">
+                  <Layers size={15} />
+                  <span>Original Image</span>
+                </span>
+                <span className="preview-label-meta">
+                  {image.width} × {image.height} px ({image.aspectRatioText || image.aspectRatio})
+                </span>
+              </div>
+
+              <div className="preview-box original-box">
+                {/* Original Image */}
+                <img
+                  src={image.previewUrl}
+                  alt="Original"
+                  className="preview-img-contain"
+                />
+
+                {/* VISUAL CROP OVERLAY MASK: Highlights kept region & darkens discarded strips */}
+                {croppedResult?.cropRect && (
+                  <div className="crop-mask-container">
+                    {/* Kept Crop Window */}
+                    <div
+                      className="crop-keep-window"
+                      style={{
+                        left: `${croppedResult.cropRect.leftPercent}%`,
+                        top: `${croppedResult.cropRect.topPercent}%`,
+                        width: `${croppedResult.cropRect.widthPercent}%`,
+                        height: `${croppedResult.cropRect.heightPercent}%`,
+                      }}
+                    >
+                      {/* Corner crop handles */}
+                      <span className="corner-bracket top-left" />
+                      <span className="corner-bracket top-right" />
+                      <span className="corner-bracket bottom-left" />
+                      <span className="corner-bracket bottom-right" />
+
+                      {/* AI Saliency Reticle */}
+                      {focusMode === 'ai' && croppedResult.focalPoint && (
+                        <div
+                          className="ai-focal-reticle"
+                          title="AI Detected Subject Focal Point"
+                        >
+                          <span className="reticle-dot" />
+                          <span className="reticle-label">AI Subject</span>
+                        </div>
+                      )}
+
+                      <div className="keep-window-badge">
+                        <span>KEPT CROP ({activeOption.label})</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+                <div className="cut-indicator-bar">
+                <Scissors size={13} color="var(--rose)" />
+                <span>
+                  {croppedResult?.cutWidth > 0
+                    ? `Discarding ${croppedResult.cutWidth}px from width (${croppedResult.percentCut}% trimmed)`
+                    : croppedResult?.cutHeight > 0
+                    ? `Discarding ${croppedResult.cutHeight}px from height (${croppedResult.percentCut}% trimmed)`
+                    : 'Exact match (0px trimmed)'}
+                </span>
+              </div>
+            </div>
+
+            {/* AUTO-CROPPED PREVIEW: PROMINENT FULL-BLEED TARGET RATIO SHAPE */}
+            <div className="preview-column">
+              <div className="preview-label-header cropped-header">
+                <span className="preview-label-title">
+                  <Crop size={15} color="var(--primary)" />
+                  <span style={{ color: 'var(--primary)' }}>Auto Cropped Result ({activeOption.label})</span>
+                </span>
+                <span className="preview-label-meta highlight">
+                  {croppedResult ? `${croppedResult.width} × ${croppedResult.height} px` : 'Rendering...'}
+                </span>
+              </div>
+
+              {/* Box physically locked to target ratio with NO empty margins */}
+              <div
+                className="cropped-result-box"
+                style={{
+                  aspectRatio: activeOption.cssRatio,
+                }}
+              >
+                {croppedResult ? (
+                  <img
+                    src={croppedResult.blobUrl}
+                    alt="Auto Cropped"
+                    className="cropped-result-img"
+                  />
+                ) : (
+                  <div className="preview-empty-state" style={{ padding: '20px' }}>
+                    <span className="spinner" style={{ width: 28, height: 28, border: '3px solid var(--primary)', borderTopColor: 'transparent', borderRadius: '50%' }} />
+                    <span style={{ fontSize: '0.85rem', marginTop: 10 }}>Auto-Cropping via AI Canvas...</span>
+                  </div>
+                )}
+
+                <div className="distortion-free-tag">
+                  <CheckCircle2 size={12} />
+                  <span>Exact {activeOption.label} • Zero Distortion</span>
+                </div>
+              </div>
+
+              <div className="cut-indicator-bar highlight">
+                <Sparkles size={13} color="var(--primary)" />
+                <span>
+                  {focusMode === 'ai' ? '🤖 AI Subject Auto-Centered' : '🎯 Mathematically Centered'} • Retains {croppedResult?.percentRetained ?? 100}% frame
+                </span>
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* 2. INTERACTIVE BEFORE / AFTER SLIDER VIEW */
+          <div className="slider-comparison-container">
+            <div className="slider-header-info">
+              <span>Drag the slider to compare Before (Original) vs After (Auto-Cropped)</span>
+              <span style={{ fontWeight: 700, color: 'var(--primary)' }}>{sliderPos}% Cropped</span>
             </div>
 
             <div
-              className="preview-box cropped-box"
+              className="slider-stage"
               style={{
                 aspectRatio: activeOption.cssRatio,
               }}
             >
-              {croppedResult ? (
+              {/* Layer 1: Cropped Image (Revealed on Right) */}
+              {croppedResult && (
                 <img
                   src={croppedResult.blobUrl}
-                  alt="Auto Cropped"
-                  className="preview-img-contain"
+                  alt="Cropped After"
+                  className="slider-img-after"
                 />
-              ) : (
-                <div className="preview-empty-state" style={{ padding: '20px' }}>
-                  <span className="spinner" style={{ width: 24, height: 24, border: '2px solid var(--primary)', borderTopColor: 'transparent', borderRadius: '50%' }} />
-                  <span style={{ fontSize: '0.8rem', marginTop: 8 }}>Cropping via Canvas...</span>
-                </div>
               )}
 
-              {/* Verified Distortion-Free Watermark / Badge */}
-              <div className="distortion-free-tag">
-                <CheckCircle2 size={12} />
-                <span>No Distortion • Exact {activeOption.label}</span>
+              {/* Layer 2: Original Image (Clipped by sliderPos on Left) */}
+              <div
+                className="slider-before-clipper"
+                style={{
+                  width: `${sliderPos}%`,
+                }}
+              >
+                <img
+                  src={image.previewUrl}
+                  alt="Original Before"
+                  className="slider-img-before"
+                />
+                <div className="slider-tag before-tag">Original Uncropped</div>
               </div>
-            </div>
 
-            <div className="preview-footer-note highlight">
-              <span>Real Canvas render • Retains {croppedResult?.percentRetained ?? 100}% of frame</span>
+              <div className="slider-tag after-tag">Auto Cropped ({activeOption.label})</div>
+
+              {/* The Draggable Divider Handle */}
+              <div
+                className="slider-divider-line"
+                style={{ left: `${sliderPos}%` }}
+              >
+                <div className="slider-handle-circle">
+                  <span>⇄</span>
+                </div>
+              </div>
+
+              {/* Range input for smooth touch and mouse scrubbing */}
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={sliderPos}
+                onChange={(e) => setSliderPos(Number(e.target.value))}
+                className="slider-scrubber-input"
+              />
             </div>
           </div>
-        </div>
+        )
       ) : (
         <div className="crop-viewport-wrapper">
           <div className="preview-empty-state">
