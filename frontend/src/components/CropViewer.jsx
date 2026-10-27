@@ -4,6 +4,7 @@ import {
   RectangleHorizontal,
   Grid,
   CheckCircle2,
+  AlertTriangle,
   Sparkles,
   Scissors,
   SplitSquareVertical,
@@ -14,6 +15,8 @@ import {
   Sliders,
   Target,
   Bot,
+  ShieldAlert,
+  Maximize2,
 } from 'lucide-react';
 import { RATIO_OPTIONS } from '../utils/constants';
 
@@ -22,8 +25,8 @@ export const CropViewer = ({
   croppedResult,
   selectedRatio,
   onRatioChange,
-  focusMode = 'ai',
-  onFocusModeChange,
+  containPadding = false,
+  onToggleContainPadding,
   isCropping = false,
 }) => {
   const [viewMode, setViewMode] = useState('side-by-side'); // 'side-by-side' or 'slider'
@@ -32,38 +35,52 @@ export const CropViewer = ({
   const activeOption =
     RATIO_OPTIONS.find((r) => r.id === selectedRatio) || RATIO_OPTIONS[0];
 
+  // Dynamic CSS ratio for the cropped container
+  const dynamicCssRatio =
+    croppedResult?.width && croppedResult?.height
+      ? `${croppedResult.width} / ${croppedResult.height}`
+      : activeOption.cssRatio || '1 / 1';
+
+  const analysis = croppedResult?.analysis;
+
   return (
     <div className="preview-stage-container">
       {/* Target Aspect Ratio Selection Bar */}
       <div className="crop-controls-card">
         <div className="controls-section-title">
-          <span>1. Select Target Aspect Ratio</span>
+          <span>Target Crop Aspect Ratio</span>
           <span className="auto-badge">
             <Sparkles size={13} />
-            <span>AI Auto-Crops Instantly</span>
+            <span>AI Content-Aware Active</span>
           </span>
         </div>
 
-        {/* 4 Selectable Ratios: 1:1 (Default), 4:3, 16:9, 3:2 */}
-        <div className="aspect-ratio-grid">
+        {/* 5 Selectable Ratios: Smart Auto (Default), 1:1, 4:3, 16:9, 3:2 */}
+        <div className="aspect-ratio-grid five-cols">
           {RATIO_OPTIONS.map((opt) => {
             const isActive = selectedRatio === opt.id;
             return (
               <button
                 key={opt.id}
                 type="button"
-                className={`ratio-btn ${isActive ? 'active' : ''}`}
+                className={`ratio-btn ${isActive ? 'active' : ''} ${opt.isAuto ? 'smart-auto-btn' : ''}`}
                 onClick={() => onRatioChange(opt.id)}
                 title={opt.description}
                 id={`ratio-btn-${opt.id.replace(':', '-')}`}
               >
-                <div
-                  className="ratio-shape-icon"
-                  style={{
-                    aspectRatio: opt.cssRatio,
-                    height: opt.id === '1:1' ? '22px' : '18px',
-                  }}
-                />
+                {opt.isAuto ? (
+                  <div className="smart-auto-icon-badge">
+                    <Bot size={18} />
+                  </div>
+                ) : (
+                  <div
+                    className="ratio-shape-icon"
+                    style={{
+                      aspectRatio: opt.cssRatio,
+                      height: opt.id === '1:1' ? '22px' : '18px',
+                    }}
+                  />
+                )}
                 <span className="ratio-tag">{opt.label}</span>
                 <span className="ratio-name">{opt.name}</span>
               </button>
@@ -71,66 +88,93 @@ export const CropViewer = ({
           })}
         </div>
 
-        {/* View Mode & AI Focus Mode Bar */}
-        <div className="view-mode-bar">
-          <div className="control-subgroup">
-            <span className="control-group-title">Crop Intelligence:</span>
-            <div className="toggle-group">
-              <button
-                type="button"
-                className={`toggle-btn ${focusMode === 'ai' ? 'active' : ''}`}
-                onClick={() => onFocusModeChange('ai')}
-                title="AI analyzes contrast & edges to find the subject"
-              >
-                <Bot size={13} />
-                <span>AI Subject Focus</span>
-              </button>
-
-              <button
-                type="button"
-                className={`toggle-btn ${focusMode === 'center' ? 'active' : ''}`}
-                onClick={() => onFocusModeChange('center')}
-                title="Mathematical center crop"
-              >
-                <Target size={13} />
-                <span>Center Focus</span>
-              </button>
-
-              <button
-                type="button"
-                className={`toggle-btn ${focusMode === 'top' ? 'active' : ''}`}
-                onClick={() => onFocusModeChange('top')}
-                title="Focus on upper region (Faces / Portraits)"
-              >
-                <Eye size={13} />
-                <span>Portrait / Face</span>
-              </button>
+        {/* AI Detection Explanation Banner */}
+        {analysis && (
+          <div className="ai-status-banner">
+            <div className="ai-status-header">
+              <span className="ai-status-tag">
+                <Bot size={14} />
+                <span>AI Vision: {analysis.primarySubject ? analysis.primarySubject.toUpperCase() : 'SCENERY'}</span>
+              </span>
+              {typeof analysis.confidence === 'number' && analysis.confidence > 0 && (
+                <span className="ai-confidence-badge">
+                  {analysis.confidence}% Confidence
+                </span>
+              )}
+              <span className="ai-ratio-badge">
+                Ratio: {analysis.chosenRatioId.toUpperCase()}
+              </span>
             </div>
+            <p className="ai-status-text">{analysis.detectionExplanation}</p>
+            {analysis.ratioExplanation && (
+              <p className="ai-ratio-text">{analysis.ratioExplanation}</p>
+            )}
+
+            {/* Warning if a manual ratio clips the subject + Smart Padding Mode */}
+            {analysis.isSubjectClipped && selectedRatio !== 'auto' && (
+              <div className="ai-clipped-warning" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: '220px' }}>
+                  <AlertTriangle size={16} color="var(--amber)" style={{ flexShrink: 0 }} />
+                  <span>
+                    Manual {selectedRatio} cuts off subject boundaries. Switch to <strong>Smart Auto</strong> or enable <strong>Smart Padding</strong>.
+                  </span>
+                </div>
+                {onToggleContainPadding && (
+                  <button
+                    type="button"
+                    className={`btn-secondary ${containPadding ? 'active' : ''}`}
+                    onClick={() => onToggleContainPadding(!containPadding)}
+                    style={{
+                      padding: '5px 12px',
+                      fontSize: '0.78rem',
+                      fontWeight: 700,
+                      borderRadius: '6px',
+                      background: containPadding ? 'var(--primary)' : 'rgba(255,255,255,0.08)',
+                      color: containPadding ? '#fff' : 'var(--text-main)',
+                      border: '1px solid var(--border)',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                    }}
+                    id="btn-toggle-contain-padding"
+                  >
+                    <Maximize2 size={13} />
+                    <span>{containPadding ? 'Smart Padding Active' : 'Fit With Smart Padding'}</span>
+                  </button>
+                )}
+              </div>
+            )}
           </div>
+        )}
 
-          <div className="control-subgroup">
-            <span className="control-group-title">Comparison View:</span>
-            <div className="toggle-group">
-              <button
-                type="button"
-                className={`toggle-btn ${viewMode === 'side-by-side' ? 'active' : ''}`}
-                onClick={() => setViewMode('side-by-side')}
-                title="Side by side view of original with cut overlay vs cropped result"
-              >
-                <Columns size={13} />
-                <span>Side by Side</span>
-              </button>
+        {/* Comparison View Mode Toggle */}
+        <div className="view-mode-bar">
+          <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+            Comparison Layout:
+          </span>
+          <div className="toggle-group">
+            <button
+              type="button"
+              className={`toggle-btn ${viewMode === 'side-by-side' ? 'active' : ''}`}
+              onClick={() => setViewMode('side-by-side')}
+              title="Side by side comparison of original with detection vs cropped"
+              id="view-toggle-side-by-side"
+            >
+              <Columns size={13} />
+              <span>Side by Side</span>
+            </button>
 
-              <button
-                type="button"
-                className={`toggle-btn ${viewMode === 'slider' ? 'active' : ''}`}
-                onClick={() => setViewMode('slider')}
-                title="Interactive Before / After comparison slider"
-              >
-                <SplitSquareVertical size={13} />
-                <span>Swipe Slider</span>
-              </button>
-            </div>
+            <button
+              type="button"
+              className={`toggle-btn ${viewMode === 'slider' ? 'active' : ''}`}
+              onClick={() => setViewMode('slider')}
+              title="Interactive Before / After comparison slider"
+              id="view-toggle-slider"
+            >
+              <SplitSquareVertical size={13} />
+              <span>Swipe Slider</span>
+            </button>
           </div>
         </div>
       </div>
@@ -140,7 +184,7 @@ export const CropViewer = ({
         viewMode === 'side-by-side' ? (
           /* 1. SIDE-BY-SIDE DUAL PREVIEW */
           <div className="dual-preview-grid">
-            {/* ORIGINAL PREVIEW WITH VISUAL CUTOUT OVERLAY */}
+            {/* ORIGINAL PREVIEW WITH VISUAL CUTOUT OVERLAY & SUBJECT BOUNDING BOX */}
             <div className="preview-column">
               <div className="preview-label-header">
                 <span className="preview-label-title">
@@ -153,59 +197,128 @@ export const CropViewer = ({
               </div>
 
               <div className="preview-box original-box">
-                {/* Original Image */}
-                <img
-                  src={image.previewUrl}
-                  alt="Original"
-                  className="preview-img-contain"
-                />
+                {/* Image Wrapper matching exact image aspect ratio so overlays align 1:1 with pixels */}
+                <div
+                  className="original-image-wrapper"
+                  style={{
+                    position: 'relative',
+                    width: '100%',
+                    height: '100%',
+                    maxWidth: '100%',
+                    maxHeight: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <div
+                    style={{
+                      position: 'relative',
+                      maxWidth: '100%',
+                      maxHeight: '100%',
+                      aspectRatio: `${image.width} / ${image.height}`,
+                      width: image.width >= image.height ? '100%' : 'auto',
+                      height: image.height > image.width ? '100%' : 'auto',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <img
+                      src={image.previewUrl}
+                      alt="Original"
+                      className="preview-img-contain"
+                      style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                    />
 
-                {/* VISUAL CROP OVERLAY MASK: Highlights kept region & darkens discarded strips */}
-                {croppedResult?.cropRect && (
-                  <div className="crop-mask-container">
-                    {/* Kept Crop Window */}
-                    <div
-                      className="crop-keep-window"
-                      style={{
-                        left: `${croppedResult.cropRect.leftPercent}%`,
-                        top: `${croppedResult.cropRect.topPercent}%`,
-                        width: `${croppedResult.cropRect.widthPercent}%`,
-                        height: `${croppedResult.cropRect.heightPercent}%`,
-                      }}
-                    >
-                      {/* Corner crop handles */}
-                      <span className="corner-bracket top-left" />
-                      <span className="corner-bracket top-right" />
-                      <span className="corner-bracket bottom-left" />
-                      <span className="corner-bracket bottom-right" />
-
-                      {/* AI Saliency Reticle */}
-                      {focusMode === 'ai' && croppedResult.focalPoint && (
+                    {/* OVERLAYS: Crop Window & Subject Bounding Box */}
+                    {croppedResult?.cropRect && (
+                      <div
+                        className="crop-mask-container"
+                        style={{
+                          position: 'absolute',
+                          inset: 0,
+                          pointerEvents: 'none',
+                        }}
+                      >
+                        {/* 1. Kept Crop Window */}
                         <div
-                          className="ai-focal-reticle"
-                          title="AI Detected Subject Focal Point"
+                          className="crop-keep-window"
+                          style={{
+                            position: 'absolute',
+                            left: `${croppedResult.cropRect.leftPercent}%`,
+                            top: `${croppedResult.cropRect.topPercent}%`,
+                            width: `${croppedResult.cropRect.widthPercent}%`,
+                            height: `${croppedResult.cropRect.heightPercent}%`,
+                          }}
                         >
-                          <span className="reticle-dot" />
-                          <span className="reticle-label">AI Subject</span>
-                        </div>
-                      )}
+                          <span className="corner-bracket top-left" />
+                          <span className="corner-bracket top-right" />
+                          <span className="corner-bracket bottom-left" />
+                          <span className="corner-bracket bottom-right" />
 
-                      <div className="keep-window-badge">
-                        <span>KEPT CROP ({activeOption.label})</span>
+                          <div className="keep-window-badge">
+                            <span>CROP ({activeOption.label})</span>
+                          </div>
+                        </div>
+
+                        {/* 2. Detected Subject Bounding Box (cyan/green outline) */}
+                        {croppedResult?.subjectRect &&
+                          typeof croppedResult.subjectRect.rawWidthPercent === 'number' &&
+                          croppedResult.subjectRect.rawWidthPercent > 0 &&
+                          !isNaN(croppedResult.subjectRect.rawLeftPercent) && (
+                            <div
+                              className="subject-bounding-box"
+                              style={{
+                                position: 'absolute',
+                                left: `${croppedResult.subjectRect.rawLeftPercent}%`,
+                                top: `${croppedResult.subjectRect.rawTopPercent}%`,
+                                width: `${croppedResult.subjectRect.rawWidthPercent}%`,
+                                height: `${croppedResult.subjectRect.rawHeightPercent}%`,
+                                border: '2px solid #06b6d4',
+                                background: 'rgba(6, 182, 212, 0.12)',
+                                borderRadius: '4px',
+                                pointerEvents: 'none',
+                              }}
+                            >
+                              <span
+                                className="subject-box-tag"
+                                style={{
+                                  position: 'absolute',
+                                  top: '-20px',
+                                  left: 0,
+                                  background: '#06b6d4',
+                                  color: '#000',
+                                  fontSize: '0.62rem',
+                                  fontWeight: 800,
+                                  padding: '1px 6px',
+                                  borderRadius: '3px',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {analysis?.primarySubject}
+                                {typeof analysis?.confidence === 'number' && analysis.confidence > 0
+                                  ? ` (${analysis.confidence}%)`
+                                  : ''}
+                              </span>
+                            </div>
+                          )}
                       </div>
-                    </div>
+                    )}
                   </div>
-                )}
+                </div>
               </div>
 
-                <div className="cut-indicator-bar">
+              <div className="cut-indicator-bar">
                 <Scissors size={13} color="var(--rose)" />
                 <span>
-                  {croppedResult?.cutWidth > 0
+                  {croppedResult?.containPadding
+                    ? '100% of frame preserved with smart padding'
+                    : croppedResult?.cutWidth > 0
                     ? `Discarding ${croppedResult.cutWidth}px from width (${croppedResult.percentCut}% trimmed)`
                     : croppedResult?.cutHeight > 0
                     ? `Discarding ${croppedResult.cutHeight}px from height (${croppedResult.percentCut}% trimmed)`
-                    : 'Exact match (0px trimmed)'}
+                    : 'Full frame preserved (0px trimmed)'}
                 </span>
               </div>
             </div>
@@ -215,43 +328,58 @@ export const CropViewer = ({
               <div className="preview-label-header cropped-header">
                 <span className="preview-label-title">
                   <Crop size={15} color="var(--primary)" />
-                  <span style={{ color: 'var(--primary)' }}>Auto Cropped Result ({activeOption.label})</span>
+                  <span style={{ color: 'var(--primary)' }}>
+                    AI Smart Cropped ({activeOption.label})
+                  </span>
                 </span>
                 <span className="preview-label-meta highlight">
-                  {croppedResult ? `${croppedResult.width} × ${croppedResult.height} px` : 'Rendering...'}
+                  {croppedResult ? `${croppedResult.width} × ${croppedResult.height} px` : 'Analyzing...'}
                 </span>
               </div>
 
-              {/* Box physically locked to target ratio with NO empty margins */}
               <div
                 className="cropped-result-box"
                 style={{
-                  aspectRatio: activeOption.cssRatio,
+                  aspectRatio: dynamicCssRatio,
                 }}
               >
                 {croppedResult ? (
                   <img
                     src={croppedResult.blobUrl}
-                    alt="Auto Cropped"
+                    alt="AI Smart Cropped"
                     className="cropped-result-img"
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'contain',
+                    }}
                   />
                 ) : (
                   <div className="preview-empty-state" style={{ padding: '20px' }}>
-                    <span className="spinner" style={{ width: 28, height: 28, border: '3px solid var(--primary)', borderTopColor: 'transparent', borderRadius: '50%' }} />
-                    <span style={{ fontSize: '0.85rem', marginTop: 10 }}>Auto-Cropping via AI Canvas...</span>
+                    <span
+                      className="spinner"
+                      style={{
+                        width: 28,
+                        height: 28,
+                        border: '3px solid var(--primary)',
+                        borderTopColor: 'transparent',
+                        borderRadius: '50%',
+                      }}
+                    />
+                    <span style={{ fontSize: '0.85rem', marginTop: 10 }}>Running AI Computer Vision Analysis...</span>
                   </div>
                 )}
 
                 <div className="distortion-free-tag">
                   <CheckCircle2 size={12} />
-                  <span>Exact {activeOption.label} • Zero Distortion</span>
+                  <span>Subject Preserved • Zero Distortion</span>
                 </div>
               </div>
 
               <div className="cut-indicator-bar highlight">
                 <Sparkles size={13} color="var(--primary)" />
                 <span>
-                  {focusMode === 'ai' ? '🤖 AI Subject Auto-Centered' : '🎯 Mathematically Centered'} • Retains {croppedResult?.percentRetained ?? 100}% frame
+                  {analysis?.primarySubject ? `Framing centered on ${analysis.primarySubject}` : 'Content balanced'} • Retains {croppedResult?.percentRetained ?? 100}% of frame
                 </span>
               </div>
             </div>
@@ -260,14 +388,14 @@ export const CropViewer = ({
           /* 2. INTERACTIVE BEFORE / AFTER SLIDER VIEW */
           <div className="slider-comparison-container">
             <div className="slider-header-info">
-              <span>Drag the slider to compare Before (Original) vs After (Auto-Cropped)</span>
+              <span>Drag slider to compare Before (Original) vs After (AI Smart Cropped)</span>
               <span style={{ fontWeight: 700, color: 'var(--primary)' }}>{sliderPos}% Cropped</span>
             </div>
 
             <div
               className="slider-stage"
               style={{
-                aspectRatio: activeOption.cssRatio,
+                aspectRatio: dynamicCssRatio,
               }}
             >
               {/* Layer 1: Cropped Image (Revealed on Right) */}
@@ -276,6 +404,7 @@ export const CropViewer = ({
                   src={croppedResult.blobUrl}
                   alt="Cropped After"
                   className="slider-img-after"
+                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                 />
               )}
 
@@ -290,11 +419,12 @@ export const CropViewer = ({
                   src={image.previewUrl}
                   alt="Original Before"
                   className="slider-img-before"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                 />
                 <div className="slider-tag before-tag">Original Uncropped</div>
               </div>
 
-              <div className="slider-tag after-tag">Auto Cropped ({activeOption.label})</div>
+              <div className="slider-tag after-tag">AI Smart Cropped ({activeOption.label})</div>
 
               {/* The Draggable Divider Handle */}
               <div
@@ -328,7 +458,7 @@ export const CropViewer = ({
               No image selected yet
             </p>
             <p style={{ fontSize: '0.85rem' }}>
-              Upload an image above or select a sample from the gallery below to see instant automatic cropping.
+              Upload any image above to see real-time AI subject detection and content-aware cropping.
             </p>
           </div>
         </div>

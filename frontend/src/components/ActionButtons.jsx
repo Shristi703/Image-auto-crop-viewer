@@ -75,17 +75,18 @@ export const ActionButtons = ({
       return;
     }
 
+    const displayRatio = croppedResult?.chosenRatioId || activeOption.label;
     const nameWithoutExt = image.name.replace(/\.[^/.]+$/, '');
-    const ratioSlug = activeOption.label.replace(':', 'x');
+    const ratioSlug = displayRatio.replace(':', 'x').toLowerCase();
     const ext = image.type === 'image/png' ? 'png' : image.type === 'image/webp' ? 'webp' : 'jpg';
-    const downloadFilename = `${nameWithoutExt}_cropped_${ratioSlug}.${ext}`;
+    const downloadFilename = `${nameWithoutExt}_smartcrop_${ratioSlug}.${ext}`;
 
     downloadBlob(croppedResult.blob, downloadFilename);
 
     onNotify({
       type: 'success',
       title: 'Cropped Image Downloaded',
-      message: `Downloaded ${downloadFilename} (${croppedResult.width}×${croppedResult.height} px, ${activeOption.label})!`,
+      message: `Downloaded ${downloadFilename} (${croppedResult.width}×${croppedResult.height} px, ${displayRatio})!`,
     });
   };
 
@@ -101,7 +102,7 @@ export const ActionButtons = ({
           id="btn-download-cropped"
         >
           <Download size={18} />
-          <span>Download Cropped Image ({activeOption.label})</span>
+          <span>Download Smart Cropped Image ({croppedResult?.chosenRatioId || activeOption.label})</span>
         </button>
 
         {/* Save to Database Button */}

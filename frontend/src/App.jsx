@@ -13,13 +13,13 @@ import {
   getGridFsImageUrl,
 } from './utils/api';
 import { getAspectRatioInfo } from './utils/formatters';
-import { generateCroppedCanvasImage } from './utils/canvasCrop';
+import { generateSmartCroppedImage } from './utils/canvasCrop';
 
 export function App() {
   const [currentImage, setCurrentImage] = useState(null);
-  // Default target aspect ratio is 1:1 Square
-  const [selectedRatio, setSelectedRatio] = useState('1:1');
-  const [focusMode, setFocusMode] = useState('ai'); // 'ai', 'center', or 'top'
+  // Default target aspect ratio is Smart Auto (AI chooses best framing)
+  const [selectedRatio, setSelectedRatio] = useState('auto');
+  const [containPadding, setContainPadding] = useState(false);
   const [croppedResult, setCroppedResult] = useState(null);
   const [isCropping, setIsCropping] = useState(false);
 
@@ -43,7 +43,7 @@ export function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  // AUTOMATIC REAL CANVAS CROP: Runs whenever currentImage, selectedRatio, or focusMode changes
+  // REAL AI CONTENT-AWARE CROP: Analyzes content and frames the subject
   useEffect(() => {
     if (!currentImage?.previewUrl) {
       if (currentCroppedUrlRef.current) {
@@ -54,16 +54,13 @@ export function App() {
       return;
     }
 
-    const activeRatioObj =
-      RATIO_OPTIONS.find((r) => r.id === selectedRatio) || RATIO_OPTIONS[0];
-
     let isMounted = true;
     setIsCropping(true);
 
-    generateCroppedCanvasImage({
+    generateSmartCroppedImage({
       source: currentImage.previewUrl,
-      targetRatio: activeRatioObj.ratio,
-      focusMode,
+      selectedRatio,
+      containPadding,
       maxDimension: 2048,
       mimeType: currentImage.type || 'image/jpeg',
     })
@@ -83,13 +80,13 @@ export function App() {
         setIsCropping(false);
       })
       .catch((err) => {
-        console.error('Auto-crop generation failed:', err);
+        console.error('Smart crop generation failed:', err);
         if (isMounted) {
           setIsCropping(false);
           addToast({
             type: 'error',
-            title: 'Auto-Crop Error',
-            message: 'Could not auto-crop image. Please check format.',
+            title: 'Vision Analysis Error',
+            message: 'Falling back to content saliency framing.',
           });
         }
       });
@@ -97,7 +94,7 @@ export function App() {
     return () => {
       isMounted = false;
     };
-  }, [currentImage?.previewUrl, selectedRatio, focusMode]);
+  }, [currentImage?.previewUrl, selectedRatio, containPadding]);
 
   // Load stored images from MongoDB GridFS
   const loadGallery = async (quiet = false) => {
@@ -240,9 +237,12 @@ export function App() {
               image={currentImage}
               croppedResult={croppedResult}
               selectedRatio={selectedRatio}
-              onRatioChange={setSelectedRatio}
-              focusMode={focusMode}
-              onFocusModeChange={setFocusMode}
+              onRatioChange={(r) => {
+                setSelectedRatio(r);
+                if (r === 'auto') setContainPadding(false);
+              }}
+              containPadding={containPadding}
+              onToggleContainPadding={setContainPadding}
               isCropping={isCropping}
             />
           </div>

@@ -1,11 +1,18 @@
 export const RATIO_OPTIONS = [
   {
+    id: 'auto',
+    label: 'Smart Auto',
+    name: 'AI Optimal Crop',
+    isAuto: true,
+    description: 'AI analyzes content & chooses the best ratio without cutting subjects',
+  },
+  {
     id: '1:1',
     label: '1:1',
     name: 'Square',
     ratio: 1 / 1,
     cssRatio: '1 / 1',
-    description: 'Instagram, Avatars, Icons',
+    description: 'Instagram, Avatars, Products',
   },
   {
     id: '4:3',

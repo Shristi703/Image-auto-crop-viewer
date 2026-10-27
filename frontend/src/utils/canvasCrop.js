@@ -1,93 +1,19 @@
-/**
- * Intelligent Image Focal Point Detector (AI Saliency & Edge Energy)
- * Analyzes contrast, gradient edges, and color saturation to automatically detect
- * the visual subject / focal point in an image.
- */
-export function detectImageFocalPoint(img) {
-  try {
-    const sampleSize = 64;
-    const canvas = document.createElement('canvas');
-    canvas.width = sampleSize;
-    canvas.height = sampleSize;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    if (!ctx) return { x: 0.5, y: 0.5 };
-
-    ctx.drawImage(img, 0, 0, sampleSize, sampleSize);
-    const imageData = ctx.getImageData(0, 0, sampleSize, sampleSize);
-    const data = imageData.data;
-
-    let totalWeight = 0;
-    let weightedX = 0;
-    let weightedY = 0;
-
-    for (let y = 1; y < sampleSize - 1; y++) {
-      for (let x = 1; x < sampleSize - 1; x++) {
-        const idx = (y * sampleSize + x) * 4;
-        const r = data[idx];
-        const g = data[idx + 1];
-        const b = data[idx + 2];
-
-        // Luminance
-        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-
-        // Neighbor luminance for gradient/edge detection
-        const idxL = (y * sampleSize + (x - 1)) * 4;
-        const idxR = (y * sampleSize + (x + 1)) * 4;
-        const idxU = ((y - 1) * sampleSize + x) * 4;
-        const idxD = ((y + 1) * sampleSize + x) * 4;
-
-        const lumL = 0.299 * data[idxL] + 0.587 * data[idxL + 1] + 0.114 * data[idxL + 2];
-        const lumR = 0.299 * data[idxR] + 0.587 * data[idxR + 1] + 0.114 * data[idxR + 2];
-        const lumU = 0.299 * data[idxU] + 0.587 * data[idxU + 1] + 0.114 * data[idxU + 2];
-        const lumD = 0.299 * data[idxD] + 0.587 * data[idxD + 1] + 0.114 * data[idxD + 2];
-
-        const gradX = Math.abs(lumR - lumL);
-        const gradY = Math.abs(lumD - lumU);
-        const edgeEnergy = gradX + gradY;
-
-        // Color saturation (salient objects usually have higher saturation than backgrounds)
-        const maxC = Math.max(r, g, b);
-        const minC = Math.min(r, g, b);
-        const sat = maxC === 0 ? 0 : (maxC - minC) / maxC;
-
-        // Weight: edge energy + saturation boost
-        const weight = edgeEnergy * (1 + sat * 1.5);
-
-        totalWeight += weight;
-        weightedX += x * weight;
-        weightedY += y * weight;
-      }
-    }
-
-    if (totalWeight > 0) {
-      const rawX = weightedX / (totalWeight * sampleSize);
-      const rawY = weightedY / (totalWeight * sampleSize);
-      // Gentle clamp towards center to prevent extreme edge jumps
-      return {
-        x: Math.min(0.85, Math.max(0.15, rawX)),
-        y: Math.min(0.85, Math.max(0.15, rawY)),
-      };
-    }
-  } catch (err) {
-    console.warn('AI Focal point detection fallback:', err);
-  }
-  return { x: 0.5, y: 0.5 };
-}
+import { analyzeImageContentAndSelectCrop } from './aiVision';
 
 /**
  * Generates an exact cropped image Blob matching target aspect ratio
- * using HTML5 Canvas API with AI Subject-Aware Focus or Mathematical Center Focus.
+ * using real Computer Vision AI Subject Detection and Content-Aware Cropping.
  *
  * @param {string|HTMLImageElement} source - Image URL, Blob URL, or HTMLImageElement
- * @param {number} targetRatio - Target aspect ratio (e.g. 1/1, 4/3, 16/9, 3/2)
- * @param {string} focusMode - 'ai' (AI Subject Focus), 'center' (Exact Center), 'top' (Face/Upper focus)
+ * @param {string} selectedRatio - 'auto', '1:1', '4:3', '16:9', '3:2'
+ * @param {boolean} containPadding - If true, pad rather than cut when subject exceeds ratio
  * @param {number} maxDimension - Clamps output resolution (default: 2048)
  * @param {string} mimeType - Export MIME type
  */
-export async function generateCroppedCanvasImage({
+export async function generateSmartCroppedImage({
   source,
-  targetRatio,
-  focusMode = 'ai',
+  selectedRatio = 'auto',
+  containPadding = false,
   maxDimension = 2048,
   mimeType = 'image/jpeg',
 }) {
@@ -102,7 +28,7 @@ export async function generateCroppedCanvasImage({
       const imageObj = new Image();
       imageObj.crossOrigin = 'anonymous';
       imageObj.onload = () => resolve(imageObj);
-      imageObj.onerror = (e) => reject(new Error('Failed to load image for cropping: ' + e));
+      imageObj.onerror = (e) => reject(new Error('Failed to load image: ' + e));
       imageObj.src = source;
     });
   } else {
@@ -116,73 +42,89 @@ export async function generateCroppedCanvasImage({
     throw new Error('Image dimensions could not be determined.');
   }
 
-  const origRatio = origW / origH;
-  let cropW = origW;
-  let cropH = origH;
+  // Run real Computer Vision AI detection and smart crop window calculation
+  const analysis = await analyzeImageContentAndSelectCrop({
+    imageElement: img,
+    origWidth: origW,
+    origHeight: origH,
+    selectedRatio,
+    containPadding,
+  });
 
-  // Determine crop box size
-  if (origRatio > targetRatio) {
-    // Image is wider than target: constrain height, crop width
-    cropH = origH;
-    cropW = Math.round(origH * targetRatio);
-  } else if (origRatio < targetRatio) {
-    // Image is taller than target: constrain width, crop height
-    cropW = origW;
-    cropH = Math.round(origW / targetRatio);
-  } else {
-    cropW = origW;
-    cropH = origH;
-  }
+  const { cropW, cropH, sourceX, sourceY, chosenRatioId, chosenRatioNumeric } = analysis;
 
-  // Determine Focal Point & Crop Coordinates
-  let focalPoint = { x: 0.5, y: 0.5 };
-  let sourceX = 0;
-  let sourceY = 0;
-
-  if (focusMode === 'ai') {
-    focalPoint = detectImageFocalPoint(img);
-    // Center crop window on focal point and clamp within original bounds
-    sourceX = Math.round(origW * focalPoint.x - cropW / 2);
-    sourceY = Math.round(origH * focalPoint.y - cropH / 2);
-  } else if (focusMode === 'top') {
-    focalPoint = { x: 0.5, y: 0.25 };
-    sourceX = Math.round((origW - cropW) / 2);
-    sourceY = Math.round((origH - cropH) * 0.15);
-  } else {
-    // Classic mathematical center
-    focalPoint = { x: 0.5, y: 0.5 };
-    sourceX = Math.round((origW - cropW) / 2);
-    sourceY = Math.round((origH - cropH) / 2);
-  }
-
-  // Clamp sourceX and sourceY to never exceed image boundaries
-  sourceX = Math.max(0, Math.min(origW - cropW, sourceX));
-  sourceY = Math.max(0, Math.min(origH - cropH, sourceY));
-
-  // Destination canvas resolution (scaled down if exceeds maxDimension to avoid device OOM)
   let destW = cropW;
   let destH = cropH;
-  if (destW > maxDimension || destH > maxDimension) {
-    const scale = Math.min(maxDimension / destW, maxDimension / destH);
-    destW = Math.round(destW * scale);
-    destH = Math.round(destH * scale);
-  }
 
   const canvas = document.createElement('canvas');
-  canvas.width = destW;
-  canvas.height = destH;
 
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    throw new Error('Could not obtain Canvas 2D context.');
+  if (containPadding && analysis.isSubjectClipped && selectedRatio !== 'auto') {
+    // SMART CONTAIN / PADDING MODE:
+    // Scale image uniformly so 100% of the image fits into the target aspect ratio
+    // with smooth blurred background margins to prevent ANY subject clipping.
+    const targetRatio = chosenRatioNumeric;
+    let canvasW, canvasH;
+
+    if (origW / origH > targetRatio) {
+      canvasW = origW;
+      canvasH = Math.round(origW / targetRatio);
+    } else {
+      canvasH = origH;
+      canvasW = Math.round(origH * targetRatio);
+    }
+
+    if (canvasW > maxDimension || canvasH > maxDimension) {
+      const scale = Math.min(maxDimension / canvasW, maxDimension / canvasH);
+      canvasW = Math.round(canvasW * scale);
+      canvasH = Math.round(canvasH * scale);
+    }
+
+    canvas.width = canvasW;
+    canvas.height = canvasH;
+    destW = canvasW;
+    destH = canvasH;
+
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+
+    // 1. Draw blurred ambient backdrop
+    ctx.save();
+    ctx.filter = 'blur(24px) brightness(0.65)';
+    ctx.drawImage(img, -20, -20, canvasW + 40, canvasH + 40);
+    ctx.restore();
+
+    // 2. Uniformly fit original image centered
+    const imgScale = Math.min(canvasW / origW, canvasH / origH);
+    const fitW = Math.round(origW * imgScale);
+    const fitH = Math.round(origH * imgScale);
+    const fitX = Math.round((canvasW - fitW) / 2);
+    const fitY = Math.round((canvasH - fitH) / 2);
+
+    ctx.drawImage(img, fitX, fitY, fitW, fitH);
+  } else {
+    // STANDARD CONTENT-AWARE CROP MODE:
+    // Scale down if exceeds maxDimension to avoid device OOM
+    if (destW > maxDimension || destH > maxDimension) {
+      const scale = Math.min(maxDimension / destW, maxDimension / destH);
+      destW = Math.round(destW * scale);
+      destH = Math.round(destH * scale);
+    }
+
+    canvas.width = destW;
+    canvas.height = destH;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      throw new Error('Could not obtain Canvas 2D context.');
+    }
+
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+
+    // Uniform slice only — ZERO STRETCH OR DISTORTION
+    ctx.drawImage(img, sourceX, sourceY, cropW, cropH, 0, 0, destW, destH);
   }
-
-  // High quality rendering
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-
-  // Draw ONLY the calculated crop slice onto the destination canvas
-  ctx.drawImage(img, sourceX, sourceY, cropW, cropH, 0, 0, destW, destH);
 
   // Safe export format
   const safeMime = ['image/png', 'image/webp'].includes(mimeType) ? mimeType : 'image/jpeg';
@@ -200,22 +142,38 @@ export async function generateCroppedCanvasImage({
 
   const blobUrl = URL.createObjectURL(blob);
 
-  // Calculate percentage and pixel metrics
+  // Percentage and pixel metrics
   const origArea = origW * origH;
   const croppedArea = cropW * cropH;
   const percentRetained = Math.round((croppedArea / origArea) * 100);
-  const percentCut = 100 - percentRetained;
+  const percentCut = Math.max(0, 100 - percentRetained);
 
   const cutWidth = origW - cropW;
   const cutHeight = origH - cropH;
 
   // Normalized crop rectangle for UI overlay on original image
   const cropRect = {
-    leftPercent: (sourceX / origW) * 100,
-    topPercent: (sourceY / origH) * 100,
-    widthPercent: (cropW / origW) * 100,
-    heightPercent: (cropH / origH) * 100,
+    leftPercent: Number(((sourceX / origW) * 100).toFixed(2)),
+    topPercent: Number(((sourceY / origH) * 100).toFixed(2)),
+    widthPercent: Number(((cropW / origW) * 100).toFixed(2)),
+    heightPercent: Number(((cropH / origH) * 100).toFixed(2)),
   };
+
+  // Normalized subject bounding box for UI overlay (Safe numbers, never NaN)
+  let subjectRect = null;
+  if (analysis.subjectBBox && typeof analysis.subjectBBox.rawX === 'number') {
+    const s = analysis.subjectBBox;
+    subjectRect = {
+      leftPercent: Number(((s.x / origW) * 100).toFixed(2)),
+      topPercent: Number(((s.y / origH) * 100).toFixed(2)),
+      widthPercent: Number(((s.width / origW) * 100).toFixed(2)),
+      heightPercent: Number(((s.height / origH) * 100).toFixed(2)),
+      rawLeftPercent: Number(((s.rawX / origW) * 100).toFixed(2)),
+      rawTopPercent: Number(((s.rawY / origH) * 100).toFixed(2)),
+      rawWidthPercent: Number(((s.rawWidth / origW) * 100).toFixed(2)),
+      rawHeightPercent: Number(((s.rawHeight / origH) * 100).toFixed(2)),
+    };
+  }
 
   return {
     blob,
@@ -233,9 +191,11 @@ export async function generateCroppedCanvasImage({
     percentRetained,
     percentCut,
     cropRect,
-    focalPoint,
-    focusMode,
-    targetRatio,
+    subjectRect,
+    analysis,
+    chosenRatioId,
+    chosenRatioNumeric,
+    containPadding,
   };
 }
 
@@ -252,3 +212,6 @@ export function downloadBlob(blob, filename) {
   document.body.removeChild(link);
   setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
 }
+
+// Backward compatibility alias
+export const generateCroppedCanvasImage = generateSmartCroppedImage;
