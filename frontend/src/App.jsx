@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Header } from './components/Header';
 import { ImageUploader } from './components/ImageUploader';
-import { CropViewer } from './components/CropViewer';
+import { CropViewer, RATIO_OPTIONS } from './components/CropViewer';
 import { ImageDetails } from './components/ImageDetails';
 import { ActionButtons } from './components/ActionButtons';
 import { SavedGallery } from './components/SavedGallery';
@@ -12,17 +12,21 @@ import {
   getGridFsImageUrl,
 } from './utils/api';
 import { getAspectRatioInfo } from './utils/formatters';
+import { generateCroppedCanvasImage } from './utils/canvasCrop';
 
 export function App() {
   const [currentImage, setCurrentImage] = useState(null);
-  const [selectedRatio, setSelectedRatio] = useState('16:9');
-  const [fitMode, setFitMode] = useState('cover'); // 'cover' or 'contain'
+  // Default target aspect ratio is 1:1 Square
+  const [selectedRatio, setSelectedRatio] = useState('1:1');
+  const [croppedResult, setCroppedResult] = useState(null);
+  const [isCropping, setIsCropping] = useState(false);
+
   const [galleryImages, setGalleryImages] = useState([]);
   const [isLoadingGallery, setIsLoadingGallery] = useState(false);
   const [isApiConnected, setIsApiConnected] = useState(false);
   const [toasts, setToasts] = useState([]);
 
-  const imageRef = useRef(null);
+  const currentCroppedUrlRef = useRef(null);
 
   // Toast notification helper
   const addToast = ({ type = 'info', title = '', message = '' }) => {
@@ -36,6 +40,61 @@ export function App() {
   const removeToast = (id) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
+
+  // AUTOMATIC REAL CANVAS CROP: Runs whenever currentImage or selectedRatio changes
+  useEffect(() => {
+    if (!currentImage?.previewUrl) {
+      if (currentCroppedUrlRef.current) {
+        URL.revokeObjectURL(currentCroppedUrlRef.current);
+        currentCroppedUrlRef.current = null;
+      }
+      setCroppedResult(null);
+      return;
+    }
+
+    const activeRatioObj =
+      RATIO_OPTIONS.find((r) => r.id === selectedRatio) || RATIO_OPTIONS[0];
+
+    let isMounted = true;
+    setIsCropping(true);
+
+    generateCroppedCanvasImage({
+      source: currentImage.previewUrl,
+      targetRatio: activeRatioObj.ratio,
+      maxDimension: 2048,
+      mimeType: currentImage.type || 'image/jpeg',
+    })
+      .then((result) => {
+        if (!isMounted) {
+          URL.revokeObjectURL(result.blobUrl);
+          return;
+        }
+
+        // Clean up previous blob URL
+        if (currentCroppedUrlRef.current) {
+          URL.revokeObjectURL(currentCroppedUrlRef.current);
+        }
+
+        currentCroppedUrlRef.current = result.blobUrl;
+        setCroppedResult(result);
+        setIsCropping(false);
+      })
+      .catch((err) => {
+        console.error('Auto-crop generation failed:', err);
+        if (isMounted) {
+          setIsCropping(false);
+          addToast({
+            type: 'error',
+            title: 'Auto-Crop Error',
+            message: 'Could not auto-crop image. Please check format.',
+          });
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [currentImage?.previewUrl, selectedRatio]);
 
   // Load stored images from MongoDB GridFS
   const loadGallery = async (quiet = false) => {
@@ -70,7 +129,6 @@ export function App() {
 
   // Set active image from uploaded file
   const handleImageSelect = (imgData) => {
-    // If previous was a local object URL, revoke it to avoid memory leaks
     if (currentImage && !currentImage.isFromDatabase && currentImage.previewUrl?.startsWith('blob:')) {
       URL.revokeObjectURL(currentImage.previewUrl);
     }
@@ -78,7 +136,7 @@ export function App() {
     addToast({
       type: 'info',
       title: 'Image Loaded',
-      message: `"${imgData.name}" is ready for aspect ratio auto-cropping.`,
+      message: `"${imgData.name}" loaded and auto-cropped to ${selectedRatio}.`,
     });
   };
 
@@ -129,7 +187,6 @@ export function App() {
         message: `"${name}" removed from MongoDB GridFS.`,
       });
 
-      // If deleted image is currently in preview, select another or clear
       if (currentImage?.dbId === id) {
         const remaining = galleryImages.filter((img) => img.id !== id);
         if (remaining.length > 0) {
@@ -153,7 +210,12 @@ export function App() {
     if (currentImage && !currentImage.isFromDatabase && currentImage.previewUrl?.startsWith('blob:')) {
       URL.revokeObjectURL(currentImage.previewUrl);
     }
+    if (currentCroppedUrlRef.current) {
+      URL.revokeObjectURL(currentCroppedUrlRef.current);
+      currentCroppedUrlRef.current = null;
+    }
     setCurrentImage(null);
+    setCroppedResult(null);
   };
 
   return (
@@ -169,15 +231,14 @@ export function App() {
 
         {/* Main Crop & Metadata Workspace */}
         <div className="workspace-grid">
-          {/* Left Column: Crop Viewer Stage */}
+          {/* Dual Previews Column: Original vs Auto-Cropped side-by-side */}
           <div className="viewer-column">
             <CropViewer
               image={currentImage}
+              croppedResult={croppedResult}
               selectedRatio={selectedRatio}
               onRatioChange={setSelectedRatio}
-              fitMode={fitMode}
-              onFitModeChange={setFitMode}
-              imageRef={imageRef}
+              isCropping={isCropping}
             />
           </div>
 
@@ -185,13 +246,14 @@ export function App() {
           <div className="sidebar-column">
             <ImageDetails
               image={currentImage}
+              croppedResult={croppedResult}
               selectedRatio={selectedRatio}
             />
 
             <ActionButtons
               image={currentImage}
+              croppedResult={croppedResult}
               selectedRatio={selectedRatio}
-              imageRef={imageRef}
               onImageSaved={handleImageSaved}
               onReset={handleReset}
               onNotify={addToast}

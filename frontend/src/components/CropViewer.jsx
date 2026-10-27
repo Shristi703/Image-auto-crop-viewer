@@ -1,11 +1,14 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   Square,
   RectangleHorizontal,
   Grid,
+  CheckCircle2,
+  Sparkles,
   Maximize2,
-  Eye,
-  SlidersHorizontal,
+  Sliders,
+  Crop,
+  Layers,
 } from 'lucide-react';
 
 export const RATIO_OPTIONS = [
@@ -15,7 +18,7 @@ export const RATIO_OPTIONS = [
     name: 'Square',
     ratio: 1 / 1,
     cssRatio: '1 / 1',
-    description: 'Instagram, Avatars, Products',
+    description: 'Instagram, Avatars, Icons',
   },
   {
     id: '4:3',
@@ -45,29 +48,27 @@ export const RATIO_OPTIONS = [
 
 export const CropViewer = ({
   image,
+  croppedResult,
   selectedRatio,
   onRatioChange,
-  fitMode,
-  onFitModeChange,
-  imageRef,
+  isCropping = false,
 }) => {
-  const [showGrid, setShowGrid] = useState(false);
-
   const activeOption =
-    RATIO_OPTIONS.find((r) => r.id === selectedRatio) || RATIO_OPTIONS[2];
+    RATIO_OPTIONS.find((r) => r.id === selectedRatio) || RATIO_OPTIONS[0];
 
   return (
     <div className="preview-stage-container">
-      {/* Ratio Controls & Mode Switcher */}
+      {/* Target Aspect Ratio Selection Bar */}
       <div className="crop-controls-card">
         <div className="controls-section-title">
           <span>Target Aspect Ratio</span>
-          <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--primary)' }}>
-            Zero Distortion Guarantee
+          <span className="auto-badge">
+            <Sparkles size={13} />
+            <span>Auto-Crops Instantly</span>
           </span>
         </div>
 
-        {/* 4 Standard Selectable Aspect Ratios */}
+        {/* 4 Selectable Ratios: 1:1 (Default), 4:3, 16:9, 3:2 */}
         <div className="aspect-ratio-grid">
           {RATIO_OPTIONS.map((opt) => {
             const isActive = selectedRatio === opt.id;
@@ -78,6 +79,7 @@ export const CropViewer = ({
                 className={`ratio-btn ${isActive ? 'active' : ''}`}
                 onClick={() => onRatioChange(opt.id)}
                 title={opt.description}
+                id={`ratio-btn-${opt.id.replace(':', '-')}`}
               >
                 <div
                   className="ratio-shape-icon"
@@ -92,83 +94,94 @@ export const CropViewer = ({
             );
           })}
         </div>
+      </div>
 
-        {/* View Mode Bar: Cover vs Contain Comparison & Grid Toggle */}
-        <div className="view-mode-bar">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)' }}>
-              Display Mode:
-            </span>
-            <div className="toggle-group">
-              <button
-                type="button"
-                className={`toggle-btn ${fitMode === 'cover' ? 'active' : ''}`}
-                onClick={() => onFitModeChange('cover')}
-                title="Auto crop image to fill target ratio (No distortion)"
-              >
-                <Maximize2 size={13} />
-                <span>Cover (Cropped)</span>
-              </button>
-              <button
-                type="button"
-                className={`toggle-btn ${fitMode === 'contain' ? 'active' : ''}`}
-                onClick={() => onFitModeChange('contain')}
-                title="Fit whole image inside ratio container (Letterbox)"
-              >
-                <Eye size={13} />
-                <span>Contain (Full)</span>
-              </button>
+      {/* DUAL SIDE-BY-SIDE PREVIEWS: Original Image vs Auto Cropped Image */}
+      {image ? (
+        <div className="dual-preview-grid">
+          {/* 1. ORIGINAL IMAGE PREVIEW */}
+          <div className="preview-column">
+            <div className="preview-label-header">
+              <span className="preview-label-title">
+                <Layers size={15} />
+                <span>Original Image</span>
+              </span>
+              <span className="preview-label-meta">
+                {image.width} × {image.height} px ({image.aspectRatioText || image.aspectRatio})
+              </span>
+            </div>
+
+            <div className="preview-box original-box">
+              <img
+                src={image.previewUrl}
+                alt="Original"
+                className="preview-img-contain"
+              />
+
+              {/* Crop guide overlay box showing the center-crop slice */}
+              {croppedResult && (
+                <div
+                  className="crop-slice-indicator"
+                  style={{
+                    aspectRatio: activeOption.cssRatio,
+                  }}
+                  title="Center crop slice region"
+                >
+                  <div className="crop-indicator-badge">Crop Region ({activeOption.label})</div>
+                </div>
+              )}
+            </div>
+
+            <div className="preview-footer-note">
+              <span>Unmodified original image ({image.type ? image.type.replace('image/', '').toUpperCase() : 'IMAGE'})</span>
             </div>
           </div>
 
-          <label className="switch-label">
-            <input
-              type="checkbox"
-              checked={showGrid}
-              onChange={(e) => setShowGrid(e.target.checked)}
-              style={{ cursor: 'pointer', accentColor: 'var(--primary)' }}
-            />
-            <Grid size={15} />
-            <span>Rule of Thirds Grid</span>
-          </label>
-        </div>
-      </div>
+          {/* 2. AUTO-CROPPED IMAGE PREVIEW */}
+          <div className="preview-column">
+            <div className="preview-label-header cropped-header">
+              <span className="preview-label-title">
+                <Crop size={15} color="var(--primary)" />
+                <span style={{ color: 'var(--primary)' }}>Auto Cropped Image</span>
+              </span>
+              <span className="preview-label-meta highlight">
+                {croppedResult ? `${croppedResult.width} × ${croppedResult.height} px (${activeOption.label})` : 'Generating...'}
+              </span>
+            </div>
 
-      {/* Main Preview Viewport */}
-      <div className="crop-viewport-wrapper">
-        {image ? (
-          <div
-            className="crop-box"
-            style={{
-              aspectRatio: activeOption.cssRatio,
-            }}
-          >
-            {/* The Image Element: strictly object-fit: cover or contain, object-position: center */}
-            <img
-              ref={imageRef}
-              src={image.previewUrl}
-              alt={image.name || 'Preview'}
-              className="crop-preview-image"
-              crossOrigin="anonymous"
+            <div
+              className="preview-box cropped-box"
               style={{
-                objectFit: fitMode === 'cover' ? 'cover' : 'contain',
-                objectPosition: 'center center',
+                aspectRatio: activeOption.cssRatio,
               }}
-            />
+            >
+              {croppedResult ? (
+                <img
+                  src={croppedResult.blobUrl}
+                  alt="Auto Cropped"
+                  className="preview-img-contain"
+                />
+              ) : (
+                <div className="preview-empty-state" style={{ padding: '20px' }}>
+                  <span className="spinner" style={{ width: 24, height: 24, border: '2px solid var(--primary)', borderTopColor: 'transparent', borderRadius: '50%' }} />
+                  <span style={{ fontSize: '0.8rem', marginTop: 8 }}>Cropping via Canvas...</span>
+                </div>
+              )}
 
-            {/* Optional Rule of Thirds Grid Overlay */}
-            {showGrid && (
-              <div className="thirds-grid-overlay">
-                {[...Array(9)].map((_, i) => (
-                  <div key={i} className="grid-cell" />
-                ))}
+              {/* Verified Distortion-Free Watermark / Badge */}
+              <div className="distortion-free-tag">
+                <CheckCircle2 size={12} />
+                <span>No Distortion • Exact {activeOption.label}</span>
               </div>
-            )}
+            </div>
 
-            {/* Subtle Center Alignment Crosshair */}
-            <div className="center-crosshair" title="Center Anchor Point" />
+            <div className="preview-footer-note highlight">
+              <span>Real Canvas render • Retains {croppedResult?.percentRetained ?? 100}% of frame</span>
+            </div>
           </div>
-        ) : (
+        </div>
+      ) : (
+        <div className="crop-viewport-wrapper">
           <div className="preview-empty-state">
             <div className="empty-icon-circle">
               <RectangleHorizontal size={36} />
@@ -177,25 +190,9 @@ export const CropViewer = ({
               No image selected yet
             </p>
             <p style={{ fontSize: '0.85rem' }}>
-              Upload an image above or pick a sample from the gallery below to preview auto-crop.
+              Upload an image above or select a sample from the gallery below to see instant automatic cropping.
             </p>
           </div>
-        )}
-      </div>
-
-      {/* Viewport Footer Info */}
-      {image && (
-        <div className="stage-header">
-          <div className="stage-badge-info">
-            <span>Target Ratio: {activeOption.label} ({activeOption.name})</span>
-            <span>•</span>
-            <span>Mode: {fitMode === 'cover' ? 'Auto Center-Crop' : 'Letterbox Contain'}</span>
-          </div>
-          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500 }}>
-            {fitMode === 'cover'
-              ? 'CSS object-fit: cover applied without distortion'
-              : 'CSS object-fit: contain showing full uncropped image'}
-          </span>
         </div>
       )}
     </div>

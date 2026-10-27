@@ -1,121 +1,151 @@
 /**
- * Generates and downloads an exact center-cropped image matching target aspect ratio
- * using the HTML5 Canvas API, preserving high fidelity without squashing or stretching.
+ * Generates an exact center-cropped image Blob matching target aspect ratio
+ * using HTML5 Canvas API and real dimensions math.
  *
- * @param {HTMLImageElement} imageEl - The loaded HTMLImageElement
- * @param {number} targetRatio - Target aspect ratio (width / height, e.g. 16/9, 4/3, 1, 1.5)
- * @param {string} targetRatioLabel - Label such as "16:9", "1:1", "4:3", "3:2"
- * @param {string} originalFilename - Original filename for naming download
- * @param {string} mimeType - Image mime type (default: image/jpeg or image/png)
+ * Formula:
+ * For target ratio R = targetWidth / targetHeight:
+ * - If origWidth / origHeight > R, crop horizontally:
+ *   cropHeight = origHeight, cropWidth = Math.round(origHeight * R)
+ *   sourceX = Math.round((origWidth - cropWidth) / 2), sourceY = 0
+ * - Else, crop vertically:
+ *   cropWidth = origWidth, cropHeight = Math.round(origWidth / R)
+ *   sourceX = 0, sourceY = Math.round((origHeight - cropHeight) / 2)
+ *
+ * @param {string|HTMLImageElement} source - Image URL, Blob URL, or HTMLImageElement
+ * @param {number} targetRatio - Target aspect ratio (e.g. 1/1, 4/3, 16/9, 3/2)
+ * @param {number} maxDimension - Clamps output resolution to prevent memory spikes (default: 2048)
+ * @param {string} mimeType - Export MIME type (default: image/jpeg or image/png)
  */
-export async function downloadCroppedImage({
-  imageEl,
+export async function generateCroppedCanvasImage({
+  source,
   targetRatio,
-  targetRatioLabel,
-  originalFilename = 'image.jpg',
+  maxDimension = 2048,
   mimeType = 'image/jpeg',
 }) {
-  if (!imageEl) {
-    throw new Error('No image element provided for cropping.');
+  if (!source) {
+    throw new Error('No image source provided.');
   }
 
-  const sw = imageEl.naturalWidth || imageEl.width;
-  const sh = imageEl.naturalHeight || imageEl.height;
+  // Load image if string source URL passed
+  let img;
+  if (typeof source === 'string') {
+    img = await new Promise((resolve, reject) => {
+      const imageObj = new Image();
+      imageObj.crossOrigin = 'anonymous';
+      imageObj.onload = () => resolve(imageObj);
+      imageObj.onerror = (e) => reject(new Error('Failed to load image for cropping: ' + e));
+      imageObj.src = source;
+    });
+  } else {
+    img = source;
+  }
 
-  if (!sw || !sh) {
+  const origW = img.naturalWidth || img.width;
+  const origH = img.naturalHeight || img.height;
+
+  if (!origW || !origH) {
     throw new Error('Image dimensions could not be determined.');
   }
 
-  const sourceRatio = sw / sh;
-  let sx = 0;
-  let sy = 0;
-  let cropW = sw;
-  let cropH = sh;
+  const origRatio = origW / origH;
+  let cropW = origW;
+  let cropH = origH;
+  let sourceX = 0;
+  let sourceY = 0;
 
-  // Calculate center-crop coordinates matching CSS object-fit: cover, object-position: center
-  if (sourceRatio > targetRatio) {
-    // Source image is wider than target ratio: crop left and right
-    cropH = sh;
-    cropW = Math.round(sh * targetRatio);
-    sx = Math.round((sw - cropW) / 2);
-    sy = 0;
-  } else if (sourceRatio < targetRatio) {
-    // Source image is taller than target ratio: crop top and bottom
-    cropW = sw;
-    cropH = Math.round(sw / targetRatio);
-    sx = 0;
-    sy = Math.round((sh - cropH) / 2);
+  // Real center crop calculation
+  if (origRatio > targetRatio) {
+    // Original is wider than target ratio: crop horizontally
+    cropH = origH;
+    cropW = Math.round(origH * targetRatio);
+    sourceX = Math.round((origW - cropW) / 2);
+    sourceY = 0;
+  } else if (origRatio < targetRatio) {
+    // Original is taller than target ratio: crop vertically
+    cropW = origW;
+    cropH = Math.round(origW / targetRatio);
+    sourceX = 0;
+    sourceY = Math.round((origH - cropH) / 2);
   } else {
     // Exact match
-    cropW = sw;
-    cropH = sh;
-    sx = 0;
-    sy = 0;
+    cropW = origW;
+    cropH = origH;
+    sourceX = 0;
+    sourceY = 0;
   }
 
-  // Create an offscreen canvas
-  const canvas = document.createElement('canvas');
-  // Optional memory safety clamp for extreme multi-megapixel images on mobile
-  const MAX_DIM = 4096;
+  // Destination canvas resolution (scaled down if exceeds maxDimension to avoid device OOM)
   let destW = cropW;
   let destH = cropH;
-  if (destW > MAX_DIM || destH > MAX_DIM) {
-    const scale = Math.min(MAX_DIM / destW, MAX_DIM / destH);
+  if (destW > maxDimension || destH > maxDimension) {
+    const scale = Math.min(maxDimension / destW, maxDimension / destH);
     destW = Math.round(destW * scale);
     destH = Math.round(destH * scale);
   }
 
+  const canvas = document.createElement('canvas');
   canvas.width = destW;
   canvas.height = destH;
 
   const ctx = canvas.getContext('2d');
   if (!ctx) {
-    throw new Error('Could not create Canvas 2D rendering context.');
+    throw new Error('Could not obtain Canvas 2D context.');
   }
 
-  // Use high quality image smoothing
+  // High quality rendering
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
 
-  // Draw source image slice onto destination canvas
-  ctx.drawImage(imageEl, sx, sy, cropW, cropH, 0, 0, destW, destH);
+  // Draw ONLY the calculated center-crop slice onto the destination canvas
+  ctx.drawImage(img, sourceX, sourceY, cropW, cropH, 0, 0, destW, destH);
 
-  // Determine export MIME type and extension
+  // Safe export format
   const safeMime = ['image/png', 'image/webp'].includes(mimeType) ? mimeType : 'image/jpeg';
-  const ext = safeMime === 'image/png' ? 'png' : safeMime === 'image/webp' ? 'webp' : 'jpg';
 
-  // Generate blob
-  return new Promise((resolve, reject) => {
+  const blob = await new Promise((resolve, reject) => {
     canvas.toBlob(
-      (blob) => {
-        if (!blob) {
-          return reject(new Error('Canvas toBlob failed to produce an image blob.'));
-        }
-
-        // Clean filename and attach crop tag
-        const nameWithoutExt = originalFilename.replace(/\.[^/.]+$/, '');
-        const ratioSlug = targetRatioLabel.replace(':', 'x');
-        const downloadFilename = `${nameWithoutExt}_cropped_${ratioSlug}.${ext}`;
-
-        // Trigger browser download
-        const blobUrl = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = blobUrl;
-        link.download = downloadFilename;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
-        resolve({
-          filename: downloadFilename,
-          width: destW,
-          height: destH,
-          size: blob.size,
-        });
+      (b) => {
+        if (!b) reject(new Error('Canvas toBlob returned null.'));
+        else resolve(b);
       },
       safeMime,
       0.95
     );
   });
+
+  const blobUrl = URL.createObjectURL(blob);
+
+  // Calculate percentage of original area retained
+  const origArea = origW * origH;
+  const croppedArea = cropW * cropH;
+  const percentRetained = Math.round((croppedArea / origArea) * 100);
+
+  return {
+    blob,
+    blobUrl,
+    width: destW,
+    height: destH,
+    cropW,
+    cropH,
+    origW,
+    origH,
+    sourceX,
+    sourceY,
+    percentRetained,
+    targetRatio,
+  };
+}
+
+/**
+ * Downloads a Blob directly with custom filename
+ */
+export function downloadBlob(blob, filename) {
+  const blobUrl = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = blobUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
 }
